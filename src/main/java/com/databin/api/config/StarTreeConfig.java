@@ -10,18 +10,22 @@ import lombok.Setter;
 @Getter
 @Setter
 public class StarTreeConfig {
-    public String getBrokerUrl() {
-		return brokerUrl;
-	}
-	public void setBrokerUrl(String brokerUrl) {
-		this.brokerUrl = brokerUrl;
-	}
-	public String getAuthToken() {
-		return authToken;
-	}
-	public void setAuthToken(String authToken) {
-		this.authToken = authToken;
-	}
-	private String brokerUrl;
+    private String brokerUrl;
     private String authToken;
+    
+    public String getBrokerUrl() {
+        return brokerUrl;
+    }
+
+    public void setBrokerUrl(String brokerUrl) {
+        this.brokerUrl = brokerUrl;
+    }
+
+    public String getAuthToken() {
+        return authToken;
+    }
+
+    public void setAuthToken(String authToken) {
+        this.authToken = authToken;
+    }
 }
