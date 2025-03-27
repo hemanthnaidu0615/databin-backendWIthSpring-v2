@@ -28,36 +28,43 @@ public class TablesController {
                 return ResponseEntity.ok(Collections.singletonMap("message", "No recent orders found."));
             }
 
-            // Extract Product IDs
+            // ✅ Fix: Use safer type conversion for product IDs
             Set<Integer> productIds = ordersData.stream()
-                .map(order -> (Integer) order.get(1))  // Product ID is at index 1
+                .map(order -> parseInteger(order.get(1)))  // Product ID is at index 1
                 .collect(Collectors.toSet());
 
             // 🟢 Step 2: Fetch Product Data
             if (productIds.isEmpty()) return ResponseEntity.ok(ordersData);
 
             String productQuery = "SELECT id AS product_id, name AS product_name, category_id FROM products WHERE id IN (" 
-                                  + String.join(",", productIds.stream().map(String::valueOf).toArray(String[]::new)) + ")";
+                                  + productIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
             List<List<Object>> productData = starTreeService.executeSqlQuery(productQuery);
-            Map<Integer, ProductInfo> productMap = productData.stream()
-                .collect(Collectors.toMap(row -> (Integer) row.get(0), row -> new ProductInfo((String) row.get(1), (Integer) row.get(2))));
 
-            // Extract Category IDs
-            Set<Integer> categoryIds = productData.stream()
-                .map(row -> (Integer) row.get(2))  // Category ID is at index 2
-                .collect(Collectors.toSet());
+            Map<Integer, ProductInfo> productMap = productData.stream()
+                .collect(Collectors.toMap(
+                    row -> parseInteger(row.get(0)), 
+                    row -> new ProductInfo(row.get(1).toString(), parseInteger(row.get(2)))
+                ));
 
             // 🟢 Step 3: Fetch Category Data
+            Set<Integer> categoryIds = productData.stream()
+                .map(row -> parseInteger(row.get(2)))  // Category ID is at index 2
+                .collect(Collectors.toSet());
+
             String categoryQuery = "SELECT id AS category_id, name AS category_name FROM categories WHERE id IN (" 
-                                  + String.join(",", categoryIds.stream().map(String::valueOf).toArray(String[]::new)) + ")";
+                                  + categoryIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
             List<List<Object>> categoryData = starTreeService.executeSqlQuery(categoryQuery);
+
             Map<Integer, String> categoryMap = categoryData.stream()
-                .collect(Collectors.toMap(row -> (Integer) row.get(0), row -> (String) row.get(1)));
+                .collect(Collectors.toMap(
+                    row -> parseInteger(row.get(0)), 
+                    row -> row.get(1).toString()
+                ));
 
             // 🟢 Step 4: Merge Data
             List<Map<String, Object>> enrichedOrders = new ArrayList<>();
             for (List<Object> order : ordersData) {
-                int productId = (Integer) order.get(1);
+                int productId = parseInteger(order.get(1));
                 ProductInfo product = productMap.getOrDefault(productId, new ProductInfo("N/A", null));
                 String categoryName = categoryMap.getOrDefault(product.categoryId, "N/A");
 
@@ -77,7 +84,18 @@ public class TablesController {
         }
     }
 
-    // Helper Class for Product Data
+    // ✅ Helper Method: Convert Object to Integer Safely
+    private int parseInteger(Object obj) {
+        if (obj == null) return 0;
+        if (obj instanceof Number) return ((Number) obj).intValue();
+        try {
+            return Integer.parseInt(obj.toString().trim());
+        } catch (NumberFormatException e) {
+            throw new RuntimeException("Invalid integer format: " + obj, e);
+        }
+    }
+
+    // ✅ Helper Class for Product Data
     static class ProductInfo {
         String name;
         Integer categoryId;
