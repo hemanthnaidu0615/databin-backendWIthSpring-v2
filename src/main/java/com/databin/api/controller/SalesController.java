@@ -12,6 +12,7 @@ import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/sales")
+@CrossOrigin(origins = "http://localhost:5173")
 public class SalesController {
 
     @Autowired

@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/orders")
+@CrossOrigin(origins = "http://localhost:5173") // Add this line for CORS support
 public class TablesController {
 
     @Autowired
@@ -20,7 +21,6 @@ public class TablesController {
     @GetMapping("/recent-orders")
     public ResponseEntity<?> getRecentOrders() {
         try {
-            // 🟢 Step 1: Fetch Latest 5 Orders
             String ordersQuery = "SELECT order_id, product_id, unit_price, order_type FROM orders ORDER BY order_date DESC LIMIT 5";
             List<List<Object>> ordersData = starTreeService.executeSqlQuery(ordersQuery);
 
@@ -28,45 +28,57 @@ public class TablesController {
                 return ResponseEntity.ok(Collections.singletonMap("message", "No recent orders found."));
             }
 
-            // ✅ Fix: Use safer type conversion for product IDs
             Set<Integer> productIds = ordersData.stream()
-                .map(order -> parseInteger(order.get(1)))  // Product ID is at index 1
+                .map(order -> parseInteger(order.get(1)))
                 .collect(Collectors.toSet());
 
-            // 🟢 Step 2: Fetch Product Data
             if (productIds.isEmpty()) return ResponseEntity.ok(ordersData);
 
-            String productQuery = "SELECT id AS product_id, name AS product_name, category_id FROM products WHERE id IN (" 
+            String productQuery = "SELECT id AS product_id, name AS product_name, category_id FROM products WHERE id IN ("
                                   + productIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
             List<List<Object>> productData = starTreeService.executeSqlQuery(productQuery);
 
             Map<Integer, ProductInfo> productMap = productData.stream()
                 .collect(Collectors.toMap(
-                    row -> parseInteger(row.get(0)), 
+                    row -> parseInteger(row.get(0)),
                     row -> new ProductInfo(row.get(1).toString(), parseInteger(row.get(2)))
                 ));
 
-            // 🟢 Step 3: Fetch Category Data
             Set<Integer> categoryIds = productData.stream()
-                .map(row -> parseInteger(row.get(2)))  // Category ID is at index 2
+                .map(row -> parseInteger(row.get(2)))
                 .collect(Collectors.toSet());
 
-            String categoryQuery = "SELECT id AS category_id, name AS category_name FROM categories WHERE id IN (" 
+            String categoryQuery = "SELECT id AS category_id, name AS category_name FROM categories WHERE id IN ("
                                   + categoryIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
             List<List<Object>> categoryData = starTreeService.executeSqlQuery(categoryQuery);
 
             Map<Integer, String> categoryMap = categoryData.stream()
                 .collect(Collectors.toMap(
-                    row -> parseInteger(row.get(0)), 
+                    row -> parseInteger(row.get(0)),
                     row -> row.get(1).toString()
                 ));
 
-            // 🟢 Step 4: Merge Data
+            Set<Integer> orderIds = ordersData.stream()
+                .map(order -> parseInteger(order.get(0)))
+                .collect(Collectors.toSet());
+
+            String shipmentQuery = "SELECT order_id, shipment_status FROM shipment WHERE order_id IN ("
+                                   + orderIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
+            List<List<Object>> shipmentData = starTreeService.executeSqlQuery(shipmentQuery);
+
+            Map<Integer, String> shipmentMap = shipmentData.stream()
+                .collect(Collectors.toMap(
+                    row -> parseInteger(row.get(0)),
+                    row -> row.get(1).toString()
+                ));
+
             List<Map<String, Object>> enrichedOrders = new ArrayList<>();
             for (List<Object> order : ordersData) {
+                int orderId = parseInteger(order.get(0));
                 int productId = parseInteger(order.get(1));
                 ProductInfo product = productMap.getOrDefault(productId, new ProductInfo("N/A", null));
                 String categoryName = categoryMap.getOrDefault(product.categoryId, "N/A");
+                String shipmentStatus = shipmentMap.getOrDefault(orderId, "Pending");
 
                 Map<String, Object> enrichedOrder = new HashMap<>();
                 enrichedOrder.put("order_id", order.get(0));
@@ -74,6 +86,7 @@ public class TablesController {
                 enrichedOrder.put("category", categoryName);
                 enrichedOrder.put("price", order.get(2));
                 enrichedOrder.put("order_type", order.get(3));
+                enrichedOrder.put("shipment_status", shipmentStatus);
 
                 enrichedOrders.add(enrichedOrder);
             }
@@ -84,7 +97,6 @@ public class TablesController {
         }
     }
 
-    // ✅ Helper Method: Convert Object to Integer Safely
     private int parseInteger(Object obj) {
         if (obj == null) return 0;
         if (obj instanceof Number) return ((Number) obj).intValue();
@@ -95,7 +107,6 @@ public class TablesController {
         }
     }
 
-    // ✅ Helper Class for Product Data
     static class ProductInfo {
         String name;
         Integer categoryId;
