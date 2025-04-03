@@ -11,7 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/dashboard-kpi")
+@RequestMapping("/api/sales-revenue")
+@CrossOrigin(origins = "http://localhost:5173")
 public class SalesAndRevenueController {
 
     @Autowired
