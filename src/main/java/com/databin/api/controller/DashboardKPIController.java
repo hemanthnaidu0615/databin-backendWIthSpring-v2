@@ -18,14 +18,21 @@ public class DashboardKPIController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Total Orders Count
+    // 📌 API: Get Total Orders Count (with date filter)
     @GetMapping("/total-orders")
-    public ResponseEntity<?> getTotalOrders() {
+    public ResponseEntity<?> getTotalOrders(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            String query = "SELECT COUNT(*) FROM orders";
-            List<List<Object>> data = starTreeService.executeSqlQuery(query);
+            String query = String.format("""
+                SELECT COUNT(*) 
+                FROM orders 
+                WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+            """, startDate, endDate);
 
+            List<List<Object>> data = starTreeService.executeSqlQuery(query);
             int totalOrders = data.isEmpty() ? 0 : parseInteger(data.get(0).get(0));
+
             return ResponseEntity.ok(Map.of("total_orders", totalOrders));
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -33,17 +40,20 @@ public class DashboardKPIController {
         }
     }
 
-    // 📌 API: Get Shipment Status Percentages
+    // 📌 API: Get Shipment Status Percentages (with date filter)
     @GetMapping("/shipment-status-percentage")
-    public ResponseEntity<?> getShipmentStatusPercentage() {
+    public ResponseEntity<?> getShipmentStatusPercentage(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            String query = """
+            String query = String.format("""
                 SELECT 
                     COUNT(*) AS total_orders,
                     SUM(CASE WHEN shipment_status = 'Delayed' THEN 1 ELSE 0 END) AS delayed_orders,
                     SUM(CASE WHEN shipment_status = 'In Transit' THEN 1 ELSE 0 END) AS in_transit_orders
                 FROM shipment
-            """;
+                WHERE actual_delivery_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+            """, startDate, endDate);
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
 
@@ -67,19 +77,24 @@ public class DashboardKPIController {
         }
     }
 
-    // 📌 API: Get Fulfillment Rate (already fixed)
+    // 📌 API: Get Fulfillment Rate (with date filter)
     @GetMapping("/fulfillment-rate")
-    public ResponseEntity<?> getFulfillmentRate() {
+    public ResponseEntity<?> getFulfillmentRate(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            String query = """
+            String query = String.format("""
                 SELECT 
                     (COUNT(e.order_id) * 100.0 / NULLIF(COUNT(o.order_id), 0)) AS fulfillment_rate
                 FROM orders o
                 LEFT JOIN fulfillment_event e 
                 ON o.order_id = e.order_id
-                AND e.event_type IN ('Shipped', 'Same-Day Delivery', 'Ship to Home', 
-                                     'Store Pickup', 'Curbside Pickup', 'Locker Pickup')
-            """;
+                AND e.event_type IN (
+                    'Shipped', 'Same-Day Delivery', 'Ship to Home', 
+                    'Store Pickup', 'Curbside Pickup', 'Locker Pickup'
+                )
+                WHERE o.order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+            """, startDate, endDate);
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
 
@@ -96,7 +111,7 @@ public class DashboardKPIController {
         }
     }
 
-    // 📌 API: Get Out-of-Stock Product Count
+    // 📌 API: Get Out-of-Stock Product Count (does not need date filtering)
     @GetMapping("/out-of-stock")
     public ResponseEntity<?> getOutOfStockCount() {
         try {
