@@ -8,10 +8,7 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import com.databin.api.service.StarTreeService;
 
@@ -23,30 +20,32 @@ public class ShipmentStatusController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Order Count by Shipment Status
+    // 📌 API: Get Order Count by Shipment Status (with date filtering)
     @GetMapping("/count")
-    public ResponseEntity<?> getOrderStatusCount() {
+    public ResponseEntity<?> getOrderStatusCount(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            // Query to fetch Delivered count from shipment table
-            String deliveredQuery = """
+            // Delivered count from shipment table with date filter
+            String deliveredQuery = String.format("""
                 SELECT COUNT(*) 
                 FROM shipment 
-                WHERE shipment_status = 'Delivered'
-            """;
+                WHERE shipment_status = 'Delivered' 
+                AND actual_delivery_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+            """, startDate, endDate);
 
-            // Query to fetch Shipped, Pending, Cancelled, and Return Received counts from fulfillment_event table
-            String fulfillmentQuery = """
+            // Fulfillment events count with date filter
+            String fulfillmentQuery = String.format("""
                 SELECT event_type, COUNT(*) 
                 FROM fulfillment_event 
                 WHERE event_type IN ('Shipped', 'Pending', 'Cancelled', 'Return Received') 
+                AND event_time BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
                 GROUP BY event_type
-            """;
+            """, startDate, endDate);
 
-            // Execute queries
             List<List<Object>> deliveredData = starTreeService.executeSqlQuery(deliveredQuery);
             List<List<Object>> fulfillmentData = starTreeService.executeSqlQuery(fulfillmentQuery);
 
-            // Initialize a map with default values
             Map<String, Integer> statusCounts = new HashMap<>();
             statusCounts.put("Delivered", deliveredData.isEmpty() ? 0 : parseInteger(deliveredData.get(0).get(0)));
             statusCounts.put("Shipped", 0);
@@ -55,7 +54,6 @@ public class ShipmentStatusController {
             statusCounts.put("Return Received", 0);
             statusCounts.put("Refunded", 0); // Will be calculated
 
-            // Populate the map with actual fulfillment data
             int returnReceivedCount = 0;
             for (List<Object> row : fulfillmentData) {
                 String status = row.get(0).toString();
@@ -66,7 +64,7 @@ public class ShipmentStatusController {
                 }
             }
 
-            // Calculate "Refunded" as Return Received / 3 (rounded)
+            // Refunded = Return Received / 3
             statusCounts.put("Refunded", Math.round(returnReceivedCount / 3.0f));
 
             return ResponseEntity.ok(statusCounts);
