@@ -12,16 +12,26 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/orders")
-@CrossOrigin(origins = "http://localhost:5173") // Add this line for CORS support
+@CrossOrigin(origins = "http://localhost:5173")
 public class TablesController {
 
     @Autowired
     private StarTreeService starTreeService;
 
+    // 📌 API: Get Recent Orders (with optional date filtering)
     @GetMapping("/recent-orders")
-    public ResponseEntity<?> getRecentOrders() {
+    public ResponseEntity<?> getRecentOrders(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            String ordersQuery = "SELECT order_id, product_id, unit_price, order_type FROM orders ORDER BY order_date DESC LIMIT 5";
+            String ordersQuery = String.format("""
+                SELECT order_id, product_id, unit_price, order_type 
+                FROM orders 
+                WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+                ORDER BY order_date DESC 
+                LIMIT 5
+            """, startDate, endDate);
+
             List<List<Object>> ordersData = starTreeService.executeSqlQuery(ordersQuery);
 
             if (ordersData.isEmpty()) {
@@ -34,8 +44,8 @@ public class TablesController {
 
             if (productIds.isEmpty()) return ResponseEntity.ok(ordersData);
 
-            String productQuery = "SELECT id AS product_id, name AS product_name, category_id FROM products WHERE id IN ("
-                                  + productIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
+            String productQuery = "SELECT id AS product_id, name AS product_name, category_id FROM products WHERE id IN (" +
+                    productIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
             List<List<Object>> productData = starTreeService.executeSqlQuery(productQuery);
 
             Map<Integer, ProductInfo> productMap = productData.stream()
@@ -48,8 +58,8 @@ public class TablesController {
                 .map(row -> parseInteger(row.get(2)))
                 .collect(Collectors.toSet());
 
-            String categoryQuery = "SELECT id AS category_id, name AS category_name FROM categories WHERE id IN ("
-                                  + categoryIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
+            String categoryQuery = "SELECT id AS category_id, name AS category_name FROM categories WHERE id IN (" +
+                    categoryIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
             List<List<Object>> categoryData = starTreeService.executeSqlQuery(categoryQuery);
 
             Map<Integer, String> categoryMap = categoryData.stream()
@@ -62,8 +72,8 @@ public class TablesController {
                 .map(order -> parseInteger(order.get(0)))
                 .collect(Collectors.toSet());
 
-            String shipmentQuery = "SELECT order_id, shipment_status FROM shipment WHERE order_id IN ("
-                                   + orderIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
+            String shipmentQuery = "SELECT order_id, shipment_status FROM shipment WHERE order_id IN (" +
+                    orderIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
             List<List<Object>> shipmentData = starTreeService.executeSqlQuery(shipmentQuery);
 
             Map<Integer, String> shipmentMap = shipmentData.stream()
@@ -93,10 +103,12 @@ public class TablesController {
 
             return ResponseEntity.ok(enrichedOrders);
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.singletonMap("error", "Failed to fetch recent orders"));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Failed to fetch recent orders"));
         }
     }
 
+    // 🔹 Helper Method: Convert Object to Integer
     private int parseInteger(Object obj) {
         if (obj == null) return 0;
         if (obj instanceof Number) return ((Number) obj).intValue();
@@ -107,6 +119,7 @@ public class TablesController {
         }
     }
 
+    // 🔹 Helper Class: Product Info
     static class ProductInfo {
         String name;
         Integer categoryId;
