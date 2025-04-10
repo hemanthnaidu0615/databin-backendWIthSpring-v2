@@ -19,23 +19,49 @@ public class SalesController {
     private StarTreeService starTreeService;
 
     @GetMapping("/metrics")
-    public ResponseEntity<?> getSalesMetrics() {
+    public ResponseEntity<?> getSalesMetrics(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            // 🟢 Query for Average Order Value
-            String avgOrderQuery = "SELECT ROUND(AVG(total_amount), 2) AS avg_order_value FROM orders";
+            // 🟢 Query for Average Order Value (within date range)
+            String avgOrderQuery = String.format("""
+                SELECT ROUND(AVG(total_amount), 2) AS avg_order_value 
+                FROM orders 
+                WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+            """, startDate, endDate);
 
             // 🟢 Query for High Spenders
-            String highSpendersQuery = "SELECT COUNT(DISTINCT customer_id) AS high_spenders FROM ("
-                    + "SELECT customer_id, SUM(total_amount) AS total_spent FROM orders "
-                    + "GROUP BY customer_id HAVING SUM(total_amount) > 95578) AS high_spender_customers";
+            String highSpendersQuery = String.format("""
+                SELECT COUNT(DISTINCT customer_id) AS high_spenders FROM (
+                    SELECT customer_id, SUM(total_amount) AS total_spent 
+                    FROM orders 
+                    WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+                    GROUP BY customer_id 
+                    HAVING SUM(total_amount) > 95578
+                ) AS high_spender_customers
+            """, startDate, endDate);
 
-            // 🟢 Query for New Customers (Customers with only 1 order)
-            String newCustomersQuery = "SELECT COUNT(customer_id) AS new_customers FROM ("
-                    + "SELECT customer_id FROM orders GROUP BY customer_id HAVING COUNT(order_id) = 1) AS new_customers";
+            // 🟢 Query for New Customers (Customers with only 1 order in range)
+            String newCustomersQuery = String.format("""
+                SELECT COUNT(customer_id) AS new_customers FROM (
+                    SELECT customer_id 
+                    FROM orders 
+                    WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+                    GROUP BY customer_id 
+                    HAVING COUNT(order_id) = 1
+                ) AS new_customers
+            """, startDate, endDate);
 
-            // 🟢 Query for Returning Customers (Customers with more than 1 order)
-            String returningCustomersQuery = "SELECT COUNT(customer_id) AS returning_customers FROM ("
-                    + "SELECT customer_id FROM orders GROUP BY customer_id HAVING COUNT(order_id) > 1) AS returning_customers";
+            // 🟢 Query for Returning Customers (More than 1 order in range)
+            String returningCustomersQuery = String.format("""
+                SELECT COUNT(customer_id) AS returning_customers FROM (
+                    SELECT customer_id 
+                    FROM orders 
+                    WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+                    GROUP BY customer_id 
+                    HAVING COUNT(order_id) > 1
+                ) AS returning_customers
+            """, startDate, endDate);
 
             // 🟢 Execute all queries asynchronously
             CompletableFuture<List<List<Object>>> avgOrderFuture = executeQueryAsync(avgOrderQuery);
