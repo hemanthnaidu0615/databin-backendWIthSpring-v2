@@ -17,28 +17,32 @@ public class ShipmentPerformanceController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Shipment Performance Data
+    // 📌 API: Get Shipment Performance Data (with date range filter)
     @GetMapping
-    public ResponseEntity<?> getShipmentPerformance() {
+    public ResponseEntity<?> getShipmentPerformance(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            String query = """
-                WITH shipment_counts AS (
-                    SELECT 
-                        carrier,
-                        shipping_method,
-                        COUNT(*) AS total_shipments
-                    FROM shipment
-                    GROUP BY carrier, shipping_method
-                )
-                SELECT 
-                    carrier,
-                    SUM(CASE WHEN shipping_method = 'Standard' THEN total_shipments ELSE 0 END) AS standard_shipments,
-                    SUM(CASE WHEN shipping_method = 'Expedited' THEN total_shipments ELSE 0 END) AS expedited_shipments,
-                    SUM(CASE WHEN shipping_method = 'Same-Day' THEN total_shipments ELSE 0 END) AS same_day_shipments
-                FROM shipment_counts
-                GROUP BY carrier
-                ORDER BY carrier
-            """;
+        	String query = String.format("""
+        		    WITH shipment_counts AS (
+        		        SELECT 
+        		            carrier,
+        		            shipping_method,
+        		            COUNT(*) AS total_shipments
+        		        FROM shipment
+        		        WHERE actual_delivery_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+        		        GROUP BY carrier, shipping_method
+        		    )
+        		    SELECT 
+        		        carrier,
+        		        SUM(CASE WHEN shipping_method = 'Standard' THEN total_shipments ELSE 0 END) AS standard_shipments,
+        		        SUM(CASE WHEN shipping_method = 'Expedited' THEN total_shipments ELSE 0 END) AS expedited_shipments,
+        		        SUM(CASE WHEN shipping_method = 'Same-Day' THEN total_shipments ELSE 0 END) AS same_day_shipments
+        		    FROM shipment_counts
+        		    GROUP BY carrier
+        		    ORDER BY carrier
+        		""", startDate, endDate);
+
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
             List<Map<String, Object>> shipments = new ArrayList<>();

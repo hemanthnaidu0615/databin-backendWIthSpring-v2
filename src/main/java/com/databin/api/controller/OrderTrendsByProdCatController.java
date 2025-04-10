@@ -17,11 +17,13 @@ public class OrderTrendsByProdCatController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Monthly Order Trends by Product Category
+    // 📌 API: Get Monthly Order Trends by Product Category (with date filtering)
     @GetMapping
-    public ResponseEntity<?> getOrderTrendsByCategory() {
+    public ResponseEntity<?> getOrderTrendsByCategory(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            String query = """
+            String query = String.format("""
                 SELECT 
                     SUBSTRING(order_date, 1, 7) AS month,
                     c.name AS category,
@@ -29,9 +31,10 @@ public class OrderTrendsByProdCatController {
                 FROM orders o
                 JOIN products p ON o.product_id = p.id
                 JOIN categories c ON p.category_id = c.id
+                WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
                 GROUP BY month, category
                 ORDER BY month
-            """;
+            """, startDate, endDate);
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
 

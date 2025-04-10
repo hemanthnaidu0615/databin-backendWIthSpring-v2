@@ -17,17 +17,20 @@ public class TopSellingProductsController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Top 5 Selling Products with Percentages
+    // 📌 API: Get Top 5 Selling Products with Percentages (with date filter)
     @GetMapping("/top-products")
-    public ResponseEntity<?> getTopSellingProducts() {
+    public ResponseEntity<?> getTopSellingProducts(
+            @RequestParam(name = "startDate") String startDate,
+            @RequestParam(name = "endDate") String endDate) {
         try {
-            String query = """
+            String query = String.format("""
                 WITH product_sales AS (
                     SELECT 
                         p.name AS product_name,
                         SUM(o.quantity) AS total_quantity
                     FROM orders o
                     JOIN products p ON o.product_id = p.id
+                    WHERE o.order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
                     GROUP BY p.name
                 ),
                 total AS (
@@ -40,7 +43,7 @@ public class TopSellingProductsController {
                 FROM product_sales ps, total t
                 ORDER BY ps.total_quantity DESC
                 LIMIT 5
-            """;
+            """, startDate, endDate);
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
 
