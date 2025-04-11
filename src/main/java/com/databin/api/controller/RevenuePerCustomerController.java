@@ -23,14 +23,14 @@ public class RevenuePerCustomerController {
             @RequestParam(name = "startDate") String startDate,
             @RequestParam(name = "endDate") String endDate) {
         try {
+            // ✅ Group by customer_id to use indexes better
             String query = String.format("""
                 SELECT 
-                    c.first_name || ' ' || c.last_name AS customer_name,
+                    o.customer_id,
                     ROUND(SUM(o.total_amount), 2) AS total_revenue
                 FROM orders o
-                JOIN customers c ON o.customer_id = c.customer_id
                 WHERE o.order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
-                GROUP BY customer_name
+                GROUP BY o.customer_id
                 ORDER BY total_revenue DESC
                 LIMIT 7
             """, startDate, endDate);
@@ -40,10 +40,14 @@ public class RevenuePerCustomerController {
             List<Map<String, Object>> topCustomers = new ArrayList<>();
 
             for (List<Object> row : data) {
-                String customerName = Objects.toString(row.get(0), "N/A");
+                String customerId = Objects.toString(row.get(0), "N/A");
                 double revenue = parseDouble(row.get(1));
 
+                // 🔄 Fetch name in Java or cache it (optional: add async batch fetch if needed)
+                String customerName = getCustomerName(customerId); // Replace with actual resolver or cache
+
                 topCustomers.add(Map.of(
+                    "customer_id", customerId,
                     "customer_name", customerName,
                     "revenue", revenue
                 ));
@@ -51,10 +55,18 @@ public class RevenuePerCustomerController {
 
             return ResponseEntity.ok(Map.of("top_customers", topCustomers));
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR) 
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to fetch top customers by revenue"));
         }
     }
+
+    // 🔧 Dummy name resolver (replace with actual DB call or cache)
+    private String getCustomerName(String customerId) {
+        // Ideally this is a Redis cache or batched lookup.
+        // Placeholder return:
+        return "Customer " + customerId;
+    }
+
 
     // 🔹 Helper Method: Convert Object to Double
     private double parseDouble(Object obj) {

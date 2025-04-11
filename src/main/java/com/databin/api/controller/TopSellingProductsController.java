@@ -22,28 +22,20 @@ public class TopSellingProductsController {
     public ResponseEntity<?> getTopSellingProducts(
             @RequestParam(name = "startDate") String startDate,
             @RequestParam(name = "endDate") String endDate) {
+
         try {
-            String query = String.format("""
-                WITH product_sales AS (
-                    SELECT 
-                        p.name AS product_name,
-                        SUM(o.quantity) AS total_quantity
-                    FROM orders o
-                    JOIN products p ON o.product_id = p.id
-                    WHERE o.order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
-                    GROUP BY p.name
-                ),
-                total AS (
-                    SELECT SUM(total_quantity) AS total_sold FROM product_sales
-                )
-                SELECT 
-                    ps.product_name,
-                    ps.total_quantity,
-                    ROUND((CAST(ps.total_quantity AS DOUBLE) * 100.0 / t.total_sold), 2) AS percentage
-                FROM product_sales ps, total t
-                ORDER BY ps.total_quantity DESC
-                LIMIT 5
-            """, startDate, endDate);
+            String query =
+                "SELECT " +
+                "    p.name AS product_name, " +
+                "    SUM(o.quantity) AS total_quantity, " +
+                "    ROUND(SUM(o.quantity) * 100.0 / " +
+                "        (SELECT SUM(quantity) FROM orders WHERE order_date BETWEEN TIMESTAMP '" + startDate + "' AND TIMESTAMP '" + endDate + "'), 2) AS percentage " +
+                "FROM orders o " +
+                "JOIN products p ON o.product_id = p.id " +
+                "WHERE o.order_date BETWEEN TIMESTAMP '" + startDate + "' AND TIMESTAMP '" + endDate + "' " +
+                "GROUP BY p.name " +
+                "ORDER BY total_quantity DESC " +
+                "LIMIT 5";
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
 
@@ -62,6 +54,7 @@ public class TopSellingProductsController {
             }
 
             return ResponseEntity.ok(Map.of("top_products", topProducts));
+
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to fetch top selling products"));
