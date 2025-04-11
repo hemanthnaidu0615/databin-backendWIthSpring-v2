@@ -33,7 +33,7 @@ public class OrderTrendsByProdCatController {
                 JOIN categories c ON p.category_id = c.id
                 WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
                 GROUP BY month, category
-                ORDER BY month
+                ORDER BY month LIMIT 5
             """, startDate, endDate);
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);

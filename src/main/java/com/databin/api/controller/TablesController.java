@@ -8,7 +8,6 @@ import org.springframework.http.HttpStatus;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -18,115 +17,53 @@ public class TablesController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Recent Orders (with optional date filtering)
+    // 📌 Optimized API: Get Recent Orders with JOINs (faster version)
     @GetMapping("/recent-orders")
     public ResponseEntity<?> getRecentOrders(
             @RequestParam(name = "startDate") String startDate,
             @RequestParam(name = "endDate") String endDate) {
         try {
-            String ordersQuery = String.format("""
-                SELECT order_id, product_id, unit_price, order_type 
-                FROM orders 
-                WHERE order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
-                ORDER BY order_date DESC 
+            // ✅ Combine all data fetching in one optimized query
+            String query = String.format("""
+                SELECT 
+                    o.order_id,
+                    p.name AS product_name,
+                    c.name AS category_name,
+                    o.unit_price,
+                    o.order_type,
+                    COALESCE(s.shipment_status, 'Pending') AS shipment_status
+                FROM orders o
+                LEFT JOIN products p ON o.product_id = p.id
+                LEFT JOIN categories c ON p.category_id = c.id
+                LEFT JOIN shipment s ON o.order_id = s.order_id
+                WHERE o.order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
+                ORDER BY o.order_date DESC
                 LIMIT 5
             """, startDate, endDate);
 
-            List<List<Object>> ordersData = starTreeService.executeSqlQuery(ordersQuery);
+            List<List<Object>> data = starTreeService.executeSqlQuery(query);
 
-            if (ordersData.isEmpty()) {
+            if (data.isEmpty()) {
                 return ResponseEntity.ok(Collections.singletonMap("message", "No recent orders found."));
             }
 
-            Set<Integer> productIds = ordersData.stream()
-                .map(order -> parseInteger(order.get(1)))
-                .collect(Collectors.toSet());
-
-            if (productIds.isEmpty()) return ResponseEntity.ok(ordersData);
-
-            String productQuery = "SELECT id AS product_id, name AS product_name, category_id FROM products WHERE id IN (" +
-                    productIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
-            List<List<Object>> productData = starTreeService.executeSqlQuery(productQuery);
-
-            Map<Integer, ProductInfo> productMap = productData.stream()
-                .collect(Collectors.toMap(
-                    row -> parseInteger(row.get(0)),
-                    row -> new ProductInfo(row.get(1).toString(), parseInteger(row.get(2)))
-                ));
-
-            Set<Integer> categoryIds = productData.stream()
-                .map(row -> parseInteger(row.get(2)))
-                .collect(Collectors.toSet());
-
-            String categoryQuery = "SELECT id AS category_id, name AS category_name FROM categories WHERE id IN (" +
-                    categoryIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
-            List<List<Object>> categoryData = starTreeService.executeSqlQuery(categoryQuery);
-
-            Map<Integer, String> categoryMap = categoryData.stream()
-                .collect(Collectors.toMap(
-                    row -> parseInteger(row.get(0)),
-                    row -> row.get(1).toString()
-                ));
-
-            Set<Integer> orderIds = ordersData.stream()
-                .map(order -> parseInteger(order.get(0)))
-                .collect(Collectors.toSet());
-
-            String shipmentQuery = "SELECT order_id, shipment_status FROM shipment WHERE order_id IN (" +
-                    orderIds.stream().map(String::valueOf).collect(Collectors.joining(",")) + ")";
-            List<List<Object>> shipmentData = starTreeService.executeSqlQuery(shipmentQuery);
-
-            Map<Integer, String> shipmentMap = shipmentData.stream()
-                .collect(Collectors.toMap(
-                    row -> parseInteger(row.get(0)),
-                    row -> row.get(1).toString()
-                ));
-
-            List<Map<String, Object>> enrichedOrders = new ArrayList<>();
-            for (List<Object> order : ordersData) {
-                int orderId = parseInteger(order.get(0));
-                int productId = parseInteger(order.get(1));
-                ProductInfo product = productMap.getOrDefault(productId, new ProductInfo("N/A", null));
-                String categoryName = categoryMap.getOrDefault(product.categoryId, "N/A");
-                String shipmentStatus = shipmentMap.getOrDefault(orderId, "Pending");
-
-                Map<String, Object> enrichedOrder = new HashMap<>();
-                enrichedOrder.put("order_id", order.get(0));
-                enrichedOrder.put("product_name", product.name);
-                enrichedOrder.put("category", categoryName);
-                enrichedOrder.put("price", order.get(2));
-                enrichedOrder.put("order_type", order.get(3));
-                enrichedOrder.put("shipment_status", shipmentStatus);
-
-                enrichedOrders.add(enrichedOrder);
+            List<Map<String, Object>> orders = new ArrayList<>();
+            for (List<Object> row : data) {
+                Map<String, Object> order = new HashMap<>();
+                order.put("order_id", row.get(0));
+                order.put("product_name", row.get(1) != null ? row.get(1).toString() : "N/A");
+                order.put("category", row.get(2) != null ? row.get(2).toString() : "N/A");
+                order.put("price", row.get(3));
+                order.put("order_type", row.get(4));
+                order.put("shipment_status", row.get(5));
+                orders.add(order);
             }
 
-            return ResponseEntity.ok(enrichedOrders);
+            return ResponseEntity.ok(orders);
+
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Collections.singletonMap("error", "Failed to fetch recent orders"));
-        }
-    }
-
-    // 🔹 Helper Method: Convert Object to Integer
-    private int parseInteger(Object obj) {
-        if (obj == null) return 0;
-        if (obj instanceof Number) return ((Number) obj).intValue();
-        try {
-            return Integer.parseInt(obj.toString().trim());
-        } catch (NumberFormatException e) {
-            throw new RuntimeException("Invalid integer format: " + obj, e);
-        }
-    }
-
-    // 🔹 Helper Class: Product Info
-    static class ProductInfo {
-        String name;
-        Integer categoryId;
-
-        public ProductInfo(String name, Integer categoryId) {
-            this.name = name;
-            this.categoryId = categoryId;
         }
     }
 }

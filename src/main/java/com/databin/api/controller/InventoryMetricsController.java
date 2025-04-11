@@ -20,74 +20,57 @@ public class InventoryMetricsController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Inventory Turnover Rate & Low Stock Alerts (with date range)
     @GetMapping("/turnover-and-alerts")
     public ResponseEntity<?> getInventoryTurnoverAndLowStock(
             @RequestParam(name = "startDate") String startDate,
             @RequestParam(name = "endDate") String endDate,
             @RequestParam(name = "threshold", defaultValue = "10") int threshold) {
+
         try {
-            // 🔹 Inventory Turnover (monthly basis)
-            String turnoverQuery = String.format("""
-                WITH monthly_sales AS (
-                    SELECT 
-                        DATE_TRUNC('month', o.order_date) AS month,
-                        SUM(o.quantity) AS total_sold
-                    FROM orders o
-                    WHERE o.order_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
-                    GROUP BY month
-                ),
-                monthly_inventory AS (
-                    SELECT 
-                        DATE_TRUNC('month', i.restock_date) AS month,
-                        AVG(i.stock_quantity) AS avg_stock
-                    FROM inventory i
-                    WHERE i.restock_date BETWEEN TIMESTAMP '%s' AND TIMESTAMP '%s'
-                    GROUP BY month
-                )
-                SELECT 
-                    COALESCE(ms.month, mi.month) AS month,
-                    COALESCE(ms.total_sold, 0) / NULLIF(mi.avg_stock, 0) AS turnover_rate
-                FROM monthly_sales ms
-                FULL OUTER JOIN monthly_inventory mi ON ms.month = mi.month
-                ORDER BY month
-            """, startDate, endDate, startDate, endDate);
+            // ✅ Faster Turnover Query (INNER JOIN by month, drop FULL OUTER JOIN)
+            StringBuilder turnoverQuery = new StringBuilder();
+            turnoverQuery.append("WITH monthly_sales AS (")
+                    .append("SELECT DATE_TRUNC('month', o.order_date) AS month, SUM(o.quantity) AS total_sold ")
+                    .append("FROM orders o ")
+                    .append("WHERE o.order_date BETWEEN TIMESTAMP '").append(startDate).append("' AND TIMESTAMP '").append(endDate).append("' ")
+                    .append("GROUP BY 1), ")
+                    .append("monthly_inventory AS (")
+                    .append("SELECT DATE_TRUNC('month', i.restock_date) AS month, AVG(i.stock_quantity) AS avg_stock ")
+                    .append("FROM inventory i ")
+                    .append("WHERE i.restock_date BETWEEN TIMESTAMP '").append(startDate).append("' AND TIMESTAMP '").append(endDate).append("' ")
+                    .append("GROUP BY 1) ")
+                    .append("SELECT s.month, ROUND(s.total_sold / NULLIF(i.avg_stock, 0), 2) AS turnover_rate ")
+                    .append("FROM monthly_sales s ")
+                    .append("JOIN monthly_inventory i ON s.month = i.month ")
+                    .append("ORDER BY s.month");
 
-            List<List<Object>> turnoverData = starTreeService.executeSqlQuery(turnoverQuery);
+            List<List<Object>> turnoverData = starTreeService.executeSqlQuery(turnoverQuery.toString());
 
-            List<Map<String, Object>> turnoverList = new ArrayList<>();
+            List<Map<String, Object>> turnoverList = new ArrayList<>(turnoverData.size());
             for (List<Object> row : turnoverData) {
-                String month = formatMonth(row.get(0));
-                double rate = parseDouble(row.get(1));
                 turnoverList.add(Map.of(
-                        "month", month,
-                        "turnover_rate", rate
+                        "month", formatMonth(row.get(0)),
+                        "turnover_rate", parseDouble(row.get(1))
                 ));
             }
 
-            // 🔹 Low Stock Products (Top 3 with restock date, no timestamp)
-            String lowStockQuery = """
-                SELECT 
-                    p.name AS product_name,
-                    i.stock_quantity,
-                    i.restock_date
-                FROM inventory i
-                JOIN products p ON i.product_id = p.id
-                WHERE i.status = 'Low Stock'
-                ORDER BY i.stock_quantity ASC
-                LIMIT 3
-            """;
+            // ✅ Low Stock Query (remove 'status' condition)
+            StringBuilder lowStockQuery = new StringBuilder();
+            lowStockQuery.append("SELECT p.name, i.stock_quantity, i.restock_date ")
+                    .append("FROM inventory i ")
+                    .append("JOIN products p ON i.product_id = p.id ")
+                    .append("WHERE i.stock_quantity <= ").append(threshold).append(" ")
+                    .append("ORDER BY i.stock_quantity ASC ")
+                    .append("LIMIT 3");
 
-            List<List<Object>> lowStockData = starTreeService.executeSqlQuery(lowStockQuery);
-            List<Map<String, Object>> lowStockList = new ArrayList<>();
+            List<List<Object>> lowStockData = starTreeService.executeSqlQuery(lowStockQuery.toString());
+
+            List<Map<String, Object>> lowStockList = new ArrayList<>(lowStockData.size());
             for (List<Object> row : lowStockData) {
-                String name = Objects.toString(row.get(0), "Unknown");
-                int qty = parseInteger(row.get(1));
-                String restockDate = formatDate(row.get(2)); // ⬅️ Format date to exclude timestamp
                 lowStockList.add(Map.of(
-                        "product_name", name,
-                        "stock_quantity", qty,
-                        "restock_date", restockDate
+                        "product_name", Objects.toString(row.get(0), "Unknown"),
+                        "stock_quantity", parseInteger(row.get(1)),
+                        "restock_date", formatDate(row.get(2))
                 ));
             }
 
@@ -95,13 +78,13 @@ public class InventoryMetricsController {
                     "turnover_rates", turnoverList,
                     "low_stock_alerts", lowStockList
             ));
+
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Failed to fetch inventory metrics"));
         }
     }
 
-    // 🔧 Format month (for turnover)
     private String formatMonth(Object obj) {
         if (obj == null) return "N/A";
 
@@ -127,12 +110,11 @@ public class InventoryMetricsController {
         return obj.toString();
     }
 
-    // 🔧 Format restock date (yyyy-MM-dd)
     private String formatDate(Object obj) {
         if (obj == null) return "N/A";
 
         if (obj instanceof java.sql.Timestamp ts) {
-            return ts.toLocalDateTime().toLocalDate().toString(); // Only date part
+            return ts.toLocalDateTime().toLocalDate().toString();
         }
 
         if (obj instanceof Number epoch) {
@@ -153,7 +135,6 @@ public class InventoryMetricsController {
         return obj.toString();
     }
 
-    // 🔧 Convert Object to Integer
     private int parseInteger(Object obj) {
         if (obj == null) return 0;
         if (obj instanceof Number) return ((Number) obj).intValue();
@@ -164,7 +145,6 @@ public class InventoryMetricsController {
         }
     }
 
-    // 🔧 Convert Object to Double
     private double parseDouble(Object obj) {
         if (obj == null) return 0.0;
         if (obj instanceof Number) return ((Number) obj).doubleValue();
