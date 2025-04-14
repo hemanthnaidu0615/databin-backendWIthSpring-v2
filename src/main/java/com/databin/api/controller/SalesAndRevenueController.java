@@ -18,14 +18,18 @@ public class SalesAndRevenueController {
     @Autowired
     private StarTreeService starTreeService;
 
-    // 📌 API: Get Total Sales Data
+    // 📌 API: Get Total Sales Data (with date filter)
     @GetMapping("/sales-data")
-    public ResponseEntity<?> getSalesData() {
+    public ResponseEntity<?> getSalesData(
+            @RequestParam("startDate") String startDate,
+            @RequestParam("endDate") String endDate) {
         try {
-            String query = "SELECT SUM(total_amount) AS total_sales FROM orders";
-            List<List<Object>> data = starTreeService.executeSqlQuery(query);
+            String query = "SELECT SUM(total_amount) AS total_sales FROM orders " +
+                    "WHERE order_date BETWEEN TIMESTAMP '" + startDate + "' AND TIMESTAMP '" + endDate + "'";
 
+            List<List<Object>> data = starTreeService.executeSqlQuery(query);
             double totalSales = data.isEmpty() || data.get(0).get(0) == null ? 0.0 : parseDouble(data.get(0).get(0));
+
             return ResponseEntity.ok(Map.of("total_sales", totalSales));
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -33,18 +37,20 @@ public class SalesAndRevenueController {
         }
     }
 
-    // 📌 API: Get Revenue Trends Over Time
+    // 📌 API: Get Revenue Trends Over Time (with date filter)
     @GetMapping("/revenue-trends")
-    public ResponseEntity<?> getRevenueTrends() {
+    public ResponseEntity<?> getRevenueTrends(
+            @RequestParam("startDate") String startDate,
+            @RequestParam("endDate") String endDate) {
         try {
-            String query = """
-                SELECT 
-                    DATE_TRUNC('month', order_date) AS month,
-                    SUM(subtotal) AS monthly_revenue
-                FROM orders
-                GROUP BY month
-                ORDER BY month DESC
-            """;
+            String query =
+                    "SELECT " +
+                    "DATE_TRUNC('month', order_date) AS month, " +
+                    "SUM(subtotal) AS monthly_revenue " +
+                    "FROM orders " +
+                    "WHERE order_date BETWEEN TIMESTAMP '" + startDate + "' AND TIMESTAMP '" + endDate + "' " +
+                    "GROUP BY month " +
+                    "ORDER BY month ASC";
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
             return ResponseEntity.ok(Map.of("revenue_trends", data));
@@ -54,19 +60,20 @@ public class SalesAndRevenueController {
         }
     }
 
-    // 📌 API: Get Forecasted Sales (Simple Moving Average for simplicity)
+    // 📌 API: Get Forecasted Sales (SMA based on selected range)
     @GetMapping("/forecasted-sales")
-    public ResponseEntity<?> getForecastedSales() {
+    public ResponseEntity<?> getForecastedSales(
+            @RequestParam("startDate") String startDate,
+            @RequestParam("endDate") String endDate) {
         try {
-            String query = """
-                SELECT 
-                    DATE_TRUNC('month', order_date) AS month,
-                    SUM(total_amount) AS monthly_sales
-                FROM orders
-                GROUP BY month
-                ORDER BY month DESC
-                LIMIT 6
-            """;
+            String query =
+                    "SELECT " +
+                    "DATE_TRUNC('month', order_date) AS month, " +
+                    "SUM(total_amount) AS monthly_sales " +
+                    "FROM orders " +
+                    "WHERE order_date BETWEEN TIMESTAMP '" + startDate + "' AND TIMESTAMP '" + endDate + "' " +
+                    "GROUP BY month " +
+                    "ORDER BY month ASC";
 
             List<List<Object>> data = starTreeService.executeSqlQuery(query);
 
@@ -76,7 +83,7 @@ public class SalesAndRevenueController {
                 for (List<Object> row : data) {
                     total += parseDouble(row.get(1));
                 }
-                forecastedSales = total / data.size();
+                forecastedSales = total / data.size(); // Simple Moving Average
             }
 
             return ResponseEntity.ok(Map.of("forecasted_sales", forecastedSales));
